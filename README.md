@@ -6,13 +6,13 @@ A local desktop time-card tracker built with Python + tkinter. Stores all data i
 
 ## Features
 
-- **Clock In / Out** with optional punch-out comment
-- **Lunch tracking** (Start Lunch / End Lunch)
+- **Multiple sessions per day** — clock in and out any number of times; each session is a separate row in Excel
+- **Lunch tracking** (Start Lunch / End Lunch) within any session
 - **Ad-hoc hours** — log extra time with a note (e.g. "1.5 hrs — evening call")
-- **Calendar view** — browse any month, click any day to view or correct entries
-- **Dashboard** — weekly hours bar chart, daily punch timeline, monthly heatmap, 90-day trend
+- **Calendar view** — browse any month, click any day to view or edit sessions
+- **Dashboard** — weekly hours bar chart, daily punch timeline (all sessions), monthly heatmap, 90-day trend
 - **Records table** — full history, sortable columns, month filter, text search, CSV export
-- **Inline editing** — fix any past entry without leaving the app
+- **Inline editing** — fix any past session without leaving the app
 - **Excel backend** — `TimeCard.xlsx` is a plain spreadsheet you can open in Excel anytime
 
 ---
@@ -70,17 +70,19 @@ The packaged binary is written to `dist/`. On first launch, `TimeCard.xlsx` is c
 
 All data lives in `TimeCard.xlsx`, one sheet per month (`Jun 2026`, `Jul 2026`, …).
 
-| Column | Field | Format |
-|--------|-------|--------|
-| A | Date | date |
-| B | Punch In | HH:MM |
-| C | Lunch Start | HH:MM |
-| D | Lunch End | HH:MM |
-| E | Punch Out | HH:MM |
-| F | Comment | text |
-| G | Ad-hoc Hours | number |
-| H | Ad-hoc Note | text |
-| I | Total Hours | number (auto-computed) |
+**Each clock-in/out session is its own row.** A day with two sessions produces two rows sharing the same date.
+
+| Column | Field | Format | Notes |
+|--------|-------|--------|-------|
+| A | Date | date | Repeated for each session |
+| B | Punch In | HH:MM | |
+| C | Lunch Start | HH:MM | |
+| D | Lunch End | HH:MM | |
+| E | Punch Out | HH:MM | |
+| F | Comment | text | First session row only |
+| G | Ad-hoc Hours | number | First session row only |
+| H | Ad-hoc Note | text | First session row only |
+| I | Total Hours | number (auto-computed) | First session row only |
 
 You can open and edit this file directly in Excel. Changes made externally will be visible in the app after restarting.
 
@@ -90,10 +92,10 @@ You can open and edit this file directly in Excel. Changes made externally will 
 
 | Tab | Purpose |
 |-----|---------|
-| **Today** | Clock in/out, lunch, ad-hoc hours for the current day |
-| **Calendar** | Browse months, click any day to view or edit that day's record |
-| **Dashboard** | Charts: weekly hours, daily timeline, monthly heatmap, 90-day trend |
-| **Records** | Full history table — filter by month, search, sort, export to CSV |
+| **Today** | Clock in/out across multiple sessions; session history shown as labelled rows; "Clock In Again" appears after clocking out |
+| **Calendar** | Browse months, click any day to view or edit its sessions; add/remove sessions per day |
+| **Dashboard** | Charts: weekly hours, daily timeline (all sessions), monthly heatmap, 90-day trend |
+| **Records** | Full history — one row per day showing first in, last out, session count, total hours; double-click to edit sessions inline |
 
 ---
 
