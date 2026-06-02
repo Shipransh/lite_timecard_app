@@ -27,18 +27,18 @@ _TODAY_RING = config.CORAL
 class CalendarView(tk.Frame):
     def __init__(self, parent, backend):
         super().__init__(parent, bg=config.CONTENT_BG)
-        self.backend     = backend
-        self._year       = datetime.date.today().year
-        self._month      = datetime.date.today().month
-        self._selected   = datetime.date.today()
-        self._month_data = {}
-        self._day_cells  = {}
+        self.backend          = backend
+        self._year            = datetime.date.today().year
+        self._month           = datetime.date.today().month
+        self._selected        = datetime.date.today()
+        self._month_data      = {}
+        self._day_cells       = {}
+        self._session_widgets = []   # list of dicts {punch_in, lunch_start, lunch_end, punch_out}
         self._build()
 
     # ── Build ───────────────────────────────────────────────────────────────
 
     def _build(self):
-        # Outer wrapper — two resizable panes
         pane = tk.PanedWindow(
             self, orient=tk.HORIZONTAL,
             bg=config.CONTENT_BG,
@@ -64,7 +64,6 @@ class CalendarView(tk.Frame):
     def _build_cal_panel(self, parent):
         parent.pack_propagate(False)
 
-        # Month navigation header
         nav = tk.Frame(parent, bg=config.CONTENT_BG)
         nav.pack(fill=tk.X, padx=22, pady=(24, 0))
 
@@ -91,7 +90,6 @@ class CalendarView(tk.Frame):
             a.bind("<Enter>", lambda e, w=a: w.configure(fg=config.FL_01))
             a.bind("<Leave>", lambda e, w=a: w.configure(fg=config.FL_02))
 
-        # Today button
         today_btn = tk.Label(
             nav, text="Today",
             bg=config.CONTENT_BG, fg=config.FL_03,
@@ -102,7 +100,6 @@ class CalendarView(tk.Frame):
         today_btn.bind("<Enter>", lambda e: today_btn.configure(fg=config.FL_01))
         today_btn.bind("<Leave>", lambda e: today_btn.configure(fg=config.FL_03))
 
-        # Day-of-week header row
         dow_frame = tk.Frame(parent, bg=config.CONTENT_BG)
         dow_frame.pack(fill=tk.X, padx=22, pady=(16, 6))
         for i, d in enumerate(DAY_HDRS):
@@ -115,16 +112,13 @@ class CalendarView(tk.Frame):
                 anchor="center"
             ).grid(row=0, column=i, sticky="ew")
 
-        # Thin divider
         tk.Frame(parent, bg="#E8E5DF", height=1).pack(fill=tk.X, padx=22, pady=(0, 6))
 
-        # Grid container
         self._grid_frame = tk.Frame(parent, bg=config.CONTENT_BG)
         self._grid_frame.pack(fill=tk.BOTH, expand=True, padx=22, pady=(0, 16))
         for ci in range(7):
             self._grid_frame.columnconfigure(ci, weight=1, uniform="col")
 
-        # Legend
         self._build_legend(parent)
 
     def _build_legend(self, parent):
@@ -169,7 +163,6 @@ class CalendarView(tk.Frame):
                         bg=config.CONTENT_BG
                     ).grid(row=ri, column=ci, padx=2, pady=2, sticky="nsew")
                     continue
-
                 self._make_cell(date, ri, ci, today)
 
     def _make_cell(self, date, ri, ci, today):
@@ -177,12 +170,13 @@ class CalendarView(tk.Frame):
         is_sel     = (date == self._selected)
         is_today   = (date == today)
         is_weekend = date.weekday() >= 5
-        has_punch  = bool(data.get("punch_in"))
+        # has_punch: first session has a punch_in
+        sessions   = data.get("sessions") or []
+        has_punch  = bool(sessions and sessions[0].get("punch_in"))
         has_adhoc  = bool(data.get("adhoc_hours"))
         hours      = data.get("total_hours") or 0
         is_ot      = has_punch and hours > config.WORK_HOURS_DAILY
 
-        # Determine cell appearance
         if is_sel:
             cell_bg = config.MIDNIGHT
             day_fg  = config.MORNING_WHITE
@@ -212,7 +206,6 @@ class CalendarView(tk.Frame):
             day_fg  = config.FL_02
             dot_clr = None
 
-        # Border: today ring or subtle
         if is_today and not is_sel:
             hbg, htk = _TODAY_RING, 2
         elif is_sel:
@@ -231,7 +224,6 @@ class CalendarView(tk.Frame):
         inner = tk.Frame(cell, bg=cell_bg)
         inner.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
-        # Day number
         day_lbl = tk.Label(
             inner, text=str(date.day),
             bg=cell_bg, fg=day_fg,
@@ -240,13 +232,11 @@ class CalendarView(tk.Frame):
         )
         day_lbl.pack(anchor="nw")
 
-        # Status dot
         if dot_clr:
             dot_row = tk.Frame(inner, bg=cell_bg)
             dot_row.pack(anchor="sw", side=tk.BOTTOM, pady=(0, 2))
             tk.Frame(dot_row, bg=dot_clr, width=6, height=6).pack(side=tk.LEFT)
 
-        # Hours hint for punch days (small text)
         if has_punch and not is_sel and hours:
             h_str = utils.decimal_to_hhmm(hours)
             tk.Label(
@@ -256,11 +246,9 @@ class CalendarView(tk.Frame):
                 anchor="e"
             ).pack(anchor="se", side=tk.BOTTOM)
 
-        # Bind click
         for w in (cell, inner, day_lbl):
             w.bind("<Button-1>", lambda _, d=date: self._select_day(d))
 
-        # Hover effect (only for unselected cells)
         def on_enter(e, c=cell, orig=cell_bg):
             if date != self._selected:
                 hover = _darken(orig, 0.96)
@@ -337,52 +325,42 @@ class CalendarView(tk.Frame):
         )
         self._live_total_lbl.pack(side=tk.LEFT, padx=(10, 0))
 
-        # Thin divider
         tk.Frame(p, bg="#EEEBE5", height=1).pack(fill=tk.X, padx=32, pady=(20, 0))
 
         # ── Punch Times section ─────────────────────────────────────────────
         self._section_hdr(p, "PUNCH TIMES", pady=(18, 10))
 
-        form = tk.Frame(p, bg=config.CARD_BG)
-        form.pack(fill=tk.X, **pad)
-        form.columnconfigure(1, weight=1)
-        form.columnconfigure(3, weight=1)
+        # Sessions container
+        self._sessions_container = tk.Frame(p, bg=config.CARD_BG)
+        self._sessions_container.pack(fill=tk.X, **pad)
 
-        self._fields = {}
-        punch_fields = [
-            ("punch_in",    "Punch In",    "HH:MM", 0, 0),
-            ("punch_out",   "Punch Out",   "HH:MM", 0, 2),
-            ("lunch_start", "Lunch Out",   "HH:MM", 1, 0),
-            ("lunch_end",   "Lunch In",    "HH:MM", 1, 2),
-        ]
-        for key, lbl, ph, row, col in punch_fields:
-            tk.Label(
-                form, text=lbl,
-                bg=config.CARD_BG, fg=config.FL_02,
-                font=(config.FONT_FAMILY, 9)
-            ).grid(row=row*2, column=col, sticky="w", pady=(0, 3), padx=(0, 8 if col == 0 else 0))
-
-            e = ttk.Entry(form, font=(config.FONT_FAMILY, 11), width=12)
-            e.grid(row=row*2+1, column=col, sticky="ew",
-                   pady=(0, 14), padx=(0, 24 if col == 0 else 0))
-            e.bind("<KeyRelease>", lambda _: self._live_total())
-            self._fields[key] = e
+        # "+ Add Session" link
+        add_lbl = tk.Label(
+            p, text="+ Add Session",
+            bg=config.CARD_BG, fg=config.FL_02,
+            font=(config.FONT_FAMILY, 9), cursor="hand2"
+        )
+        add_lbl.pack(anchor="w", **pad, pady=(6, 0))
+        add_lbl.bind("<Button-1>", lambda _: self._add_session())
+        add_lbl.bind("<Enter>", lambda e: add_lbl.configure(fg=config.FL_01))
+        add_lbl.bind("<Leave>", lambda e: add_lbl.configure(fg=config.FL_02))
 
         # Comment field — full width below
+        tk.Frame(p, bg="#EEEBE5", height=1).pack(fill=tk.X, padx=32, pady=(14, 0))
+
         tk.Label(
             p, text="Comment",
             bg=config.CARD_BG, fg=config.FL_02,
             font=(config.FONT_FAMILY, 9)
-        ).pack(anchor="w", **pad)
+        ).pack(anchor="w", **pad, pady=(10, 3))
 
-        self._fields["punch_comment"] = ttk.Entry(p, font=(config.FONT_FAMILY, 11))
-        self._fields["punch_comment"].pack(fill=tk.X, pady=(4, 0), **pad)
+        self._comment_entry = ttk.Entry(p, font=(config.FONT_FAMILY, 11))
+        self._comment_entry.pack(fill=tk.X, pady=(0, 0), **pad)
 
         # ── Ad-hoc section ──────────────────────────────────────────────────
         tk.Frame(p, bg="#EEEBE5", height=1).pack(fill=tk.X, padx=32, pady=(20, 0))
         self._section_hdr(p, "AD-HOC HOURS", pady=(18, 10))
 
-        # Hours row
         ah_hrs_row = tk.Frame(p, bg=config.CARD_BG)
         ah_hrs_row.pack(fill=tk.X, **pad, pady=(0, 10))
 
@@ -400,7 +378,6 @@ class CalendarView(tk.Frame):
         self._ah_spin.pack(side=tk.LEFT)
         self._ah_spin.bind("<KeyRelease>", lambda _: self._live_total())
 
-        # Note row — full width on its own line
         tk.Label(
             p, text="Note:",
             bg=config.CARD_BG, fg=config.FL_02,
@@ -439,7 +416,102 @@ class CalendarView(tk.Frame):
             font=(config.FONT_FAMILY, 8, "bold")
         ).pack(anchor="w", padx=32, pady=pady)
 
-    # ── Select / refresh day ────────────────────────────────────────────────
+    # ── Session widgets ─────────────────────────────────────────────────────
+
+    def _rebuild_sessions_ui(self, sessions_data):
+        """Clear sessions container and recreate rows from sessions_data list."""
+        for w in self._sessions_container.winfo_children():
+            w.destroy()
+        self._session_widgets = []
+
+        if not sessions_data:
+            sessions_data = [{"punch_in": "", "lunch_start": "", "lunch_end": "", "punch_out": ""}]
+
+        for idx, s in enumerate(sessions_data):
+            wdict = self._add_session_row_widget(s, idx)
+            self._session_widgets.append(wdict)
+
+    def _add_session_row_widget(self, data, idx):
+        """Create one session row in the sessions container. Returns dict of Entry widgets."""
+        row_frame = tk.Frame(self._sessions_container, bg=config.CARD_BG)
+        row_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Session label
+        tk.Label(
+            row_frame,
+            text="Session {}".format(idx + 1),
+            bg=config.CARD_BG, fg=config.FL_02,
+            font=(config.FONT_FAMILY, 8, "bold")
+        ).grid(row=0, column=0, columnspan=8, sticky="w", pady=(0, 4))
+
+        fields_frame = tk.Frame(row_frame, bg=config.CARD_BG)
+        fields_frame.grid(row=1, column=0, sticky="ew")
+        row_frame.columnconfigure(0, weight=1)
+
+        entries = {}
+        field_defs = [
+            ("punch_in",    "Punch In"),
+            ("lunch_start", "Lunch Out"),
+            ("lunch_end",   "Lunch In"),
+            ("punch_out",   "Punch Out"),
+        ]
+        for col_idx, (key, lbl) in enumerate(field_defs):
+            tk.Label(
+                fields_frame, text=lbl,
+                bg=config.CARD_BG, fg=config.FL_02,
+                font=(config.FONT_FAMILY, 9)
+            ).grid(row=0, column=col_idx * 2, sticky="w", padx=(0 if col_idx == 0 else 12, 4))
+
+            e = ttk.Entry(fields_frame, font=(config.FONT_FAMILY, 11), width=8)
+            e.insert(0, data.get(key) or "")
+            e.grid(row=0, column=col_idx * 2 + 1, sticky="ew", padx=(0, 4))
+            e.bind("<KeyRelease>", lambda _: self._live_total())
+            entries[key] = e
+            fields_frame.columnconfigure(col_idx * 2 + 1, weight=1)
+
+        # Remove link
+        remove_lbl = tk.Label(
+            fields_frame, text="Remove",
+            bg=config.CARD_BG, fg=config.FL_03,
+            font=(config.FONT_FAMILY, 8), cursor="hand2"
+        )
+        remove_lbl.grid(row=0, column=8, padx=(8, 0))
+        remove_lbl.bind("<Button-1>", lambda _, i=idx: self._remove_session(i))
+        remove_lbl.bind("<Enter>", lambda e, w=remove_lbl: w.configure(fg=config.CORAL))
+        remove_lbl.bind("<Leave>", lambda e, w=remove_lbl: w.configure(fg=config.FL_03))
+
+        return entries
+
+    def _add_session(self):
+        """Append an empty session row."""
+        current = self._get_sessions_from_widgets()
+        current.append({"punch_in": "", "lunch_start": "", "lunch_end": "", "punch_out": ""})
+        self._rebuild_sessions_ui(current)
+
+    def _remove_session(self, idx):
+        """Remove a session row. If only one left, clear it instead."""
+        current = self._get_sessions_from_widgets()
+        if len(current) <= 1:
+            # Clear the single session instead of removing
+            self._rebuild_sessions_ui([{"punch_in": "", "lunch_start": "", "lunch_end": "", "punch_out": ""}])
+        else:
+            current.pop(idx)
+            self._rebuild_sessions_ui(current)
+        self._live_total()
+
+    def _get_sessions_from_widgets(self):
+        """Collect current widget values into a list of session dicts."""
+        result = []
+        for wdict in self._session_widgets:
+            result.append({
+                "punch_in":    wdict["punch_in"].get().strip(),
+                "lunch_start": wdict["lunch_start"].get().strip(),
+                "lunch_end":   wdict["lunch_end"].get().strip(),
+                "punch_out":   wdict["punch_out"].get().strip(),
+            })
+        return result
+
+    # ── Select / refresh day ─────────────────────────────────────────────────
 
     def _select_day(self, date):
         self._selected = date
@@ -450,10 +522,15 @@ class CalendarView(tk.Frame):
         self._detail_dow.configure(text=dow)
         self._detail_date.configure(text=full)
 
-        for key, entry in self._fields.items():
-            entry.delete(0, tk.END)
-            entry.insert(0, data.get(key) or "")
+        # Rebuild sessions UI
+        sessions = data.get("sessions") or []
+        self._rebuild_sessions_ui(sessions)
 
+        # Comment
+        self._comment_entry.delete(0, tk.END)
+        self._comment_entry.insert(0, data.get("punch_comment") or data.get("comment") or "")
+
+        # Ad-hoc
         ah = data.get("adhoc_hours")
         self._ah_spin.set(str(ah) if ah else "0.0")
         self._ah_note.delete(0, tk.END)
@@ -463,16 +540,13 @@ class CalendarView(tk.Frame):
         self._rebuild_grid()
 
     def _live_total(self):
-        pi = utils.parse_time(self._fields["punch_in"].get())
-        ls = utils.parse_time(self._fields["lunch_start"].get())
-        le = utils.parse_time(self._fields["lunch_end"].get())
-        po = utils.parse_time(self._fields["punch_out"].get())
+        sessions = self._get_sessions_from_widgets()
         try:
             ah = float(self._ah_spin.get())
             ah = ah if ah > 0 else None
         except ValueError:
             ah = None
-        total = utils.compute_hours(pi, ls, le, po, ah)
+        total = utils.compute_day_hours(sessions, ah)
         self._live_total_lbl.configure(
             text=utils.decimal_to_hhmm(total) if total is not None else "--"
         )
@@ -480,16 +554,17 @@ class CalendarView(tk.Frame):
     # ── Save / Clear ────────────────────────────────────────────────────────
 
     def _validate_times(self):
-        for key in ("punch_in", "lunch_start", "lunch_end", "punch_out"):
-            val = self._fields[key].get().strip()
-            if val and not utils.validate_hhmm(val):
-                messagebox.showerror(
-                    "Invalid time",
-                    "'{}' is not valid for {}. Use HH:MM.".format(
-                        val, key.replace("_", " ").title()
+        for idx, wdict in enumerate(self._session_widgets):
+            for key, entry in wdict.items():
+                val = entry.get().strip()
+                if val and not utils.validate_hhmm(val):
+                    messagebox.showerror(
+                        "Invalid time",
+                        "Session {}: '{}' is not a valid time for {}. Use HH:MM.".format(
+                            idx + 1, val, key.replace("_", " ").title()
+                        )
                     )
-                )
-                return False
+                    return False
         return True
 
     def _save_day(self):
@@ -501,12 +576,16 @@ class CalendarView(tk.Frame):
         except ValueError:
             ah = None
 
+        # Filter out completely empty sessions
+        sessions = [
+            s for s in self._get_sessions_from_widgets()
+            if any(s.get(k) for k in ("punch_in", "lunch_start", "lunch_end", "punch_out"))
+        ]
+
         data = {
-            "punch_in":      self._fields["punch_in"].get().strip(),
-            "lunch_start":   self._fields["lunch_start"].get().strip(),
-            "lunch_end":     self._fields["lunch_end"].get().strip(),
-            "punch_out":     self._fields["punch_out"].get().strip(),
-            "punch_comment": self._fields["punch_comment"].get().strip(),
+            "sessions":      sessions,
+            "punch_comment": self._comment_entry.get().strip(),
+            "comment":       self._comment_entry.get().strip(),
             "adhoc_hours":   ah,
             "adhoc_note":    self._ah_note.get().strip(),
         }
@@ -530,9 +609,11 @@ class CalendarView(tk.Frame):
             return
         try:
             self.backend.write_day(self._selected, {
-                "punch_in": "", "lunch_start": "", "lunch_end": "",
-                "punch_out": "", "punch_comment": "",
-                "adhoc_hours": None, "adhoc_note": "",
+                "sessions": [],
+                "punch_comment": "",
+                "comment": "",
+                "adhoc_hours": None,
+                "adhoc_note": "",
             })
         except PermissionError as e:
             messagebox.showerror("File Error", str(e))

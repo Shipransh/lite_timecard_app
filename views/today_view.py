@@ -6,7 +6,6 @@ import config
 import utils
 from widgets import FlatButton, card_frame, section_title
 
-# Chip: (bg, fg)
 CHIPS = {
     "IDLE":        (config.SUNRISE_CREAM, config.FL_02),
     "CLOCKED IN":  (config.MIDNIGHT,      config.MORNING_WHITE),
@@ -14,8 +13,7 @@ CHIPS = {
     "CLOCKED OUT": (config.SUNRISE_CREAM, config.FL_02),
 }
 
-# Button appearance when active: (bg, fg)
-BTN_ACTIVE = {
+BTN_COLORS = {
     "punch_in":    (config.MIDNIGHT,      config.MORNING_WHITE),
     "lunch_start": (config.SUNRISE_CREAM, config.FL_01),
     "lunch_end":   (config.SUNRISE_CREAM, config.FL_01),
@@ -31,12 +29,14 @@ class TodayView(tk.Frame):
         self._data   = {}
         self._btns   = {}
         self._tlbls  = {}
+        self._session_history_frame = None
+        self._active_grid_frame     = None
+        self._clock_in_again_btn    = None
         self._build()
 
     # ── Layout ──────────────────────────────────────────────────────────────
 
     def _build(self):
-        # Simple frame, no scrollable canvas — content fits standard window
         p = tk.Frame(self, bg=config.CONTENT_BG)
         p.pack(fill=tk.BOTH, expand=True)
 
@@ -64,22 +64,27 @@ class TodayView(tk.Frame):
         self._badge.pack(side=tk.LEFT, padx=(16, 0))
 
     def _build_punch_card(self, p):
-        inner = card_frame(p, pady=(0, 10))
+        self._punch_inner = card_frame(p, pady=(0, 10))
 
-        section_title(inner, "Today's Punches").pack(anchor="w", pady=(0, 14))
+        section_title(self._punch_inner, "Today's Punches").pack(
+            anchor="w", pady=(0, 14)
+        )
 
-        # ── Punch buttons ──────────────────────────────────────────────────
-        btn_row = tk.Frame(inner, bg=config.CARD_BG)
+        # ── Session history (dynamically rebuilt) ──────────────────────────
+        self._session_history_frame = tk.Frame(self._punch_inner, bg=config.CARD_BG)
+        self._session_history_frame.pack(fill=tk.X, pady=(0, 8))
+
+        # ── Active session buttons ─────────────────────────────────────────
+        btn_row = tk.Frame(self._punch_inner, bg=config.CARD_BG)
         btn_row.pack(fill=tk.X)
 
-        specs = [
+        for key, label in [
             ("punch_in",    "Clock In"),
             ("lunch_start", "Start Lunch"),
             ("lunch_end",   "End Lunch"),
             ("punch_out",   "Clock Out"),
-        ]
-        for key, label in specs:
-            bg, fg = BTN_ACTIVE[key]
+        ]:
+            bg, fg = BTN_COLORS[key]
             btn = FlatButton(
                 btn_row, text=label,
                 bg=bg, fg=fg,
@@ -90,40 +95,31 @@ class TodayView(tk.Frame):
             btn.pack(side=tk.LEFT, padx=(0, 8))
             self._btns[key] = btn
 
-        # ── Time display boxes ─────────────────────────────────────────────
-        grid = tk.Frame(inner, bg=config.CARD_BG)
-        grid.pack(fill=tk.X, pady=(18, 0))
+        # ── Active session time boxes ──────────────────────────────────────
+        self._active_grid_frame = tk.Frame(self._punch_inner, bg=config.CARD_BG)
+        self._active_grid_frame.pack(fill=tk.X, pady=(18, 0))
 
-        fields = [
+        for col, (key, lbl_text) in enumerate([
             ("punch_in",    "Punch In"),
             ("lunch_start", "Lunch Out"),
             ("lunch_end",   "Lunch In"),
             ("punch_out",   "Punch Out"),
-        ]
-        for col, (key, lbl_text) in enumerate(fields):
-            cell = tk.Frame(
-                grid, bg=config.SUNRISE_WHITE,
-                highlightbackground="#E8E5DF", highlightthickness=1
-            )
-            cell.grid(row=0, column=col, padx=(0, 8), sticky="ew", ipady=10, ipadx=12)
-            grid.columnconfigure(col, weight=1)
+        ]):
+            self._make_time_cell(self._active_grid_frame, key, lbl_text, col)
+            self._active_grid_frame.columnconfigure(col, weight=1)
 
-            tk.Label(
-                cell, text=lbl_text,
-                bg=config.SUNRISE_WHITE, fg=config.FL_03,
-                font=(config.FONT_FAMILY, 8)
-            ).pack(anchor="w", padx=12, pady=(10, 2))
-
-            lbl = tk.Label(
-                cell, text="--:--",
-                bg=config.SUNRISE_WHITE, fg=config.FL_01,
-                font=(config.FONT_FAMILY, 20, "bold")
-            )
-            lbl.pack(anchor="w", padx=12, pady=(0, 10))
-            self._tlbls[key] = lbl
+        # ── "Clock In Again" button (hidden until all sessions complete) ───
+        self._clock_in_again_btn = FlatButton(
+            self._punch_inner, text="Clock In Again",
+            bg=config.MIDNIGHT, fg=config.MORNING_WHITE,
+            padx=18, pady=13,
+            font=(config.FONT_FAMILY, 10, "bold"),
+            command=self._punch_new_session
+        )
+        # Don't pack yet — shown/hidden in _refresh()
 
         # ── Total + comment ────────────────────────────────────────────────
-        foot = tk.Frame(inner, bg=config.CARD_BG)
+        foot = tk.Frame(self._punch_inner, bg=config.CARD_BG)
         foot.pack(fill=tk.X, pady=(16, 0))
 
         tk.Label(
@@ -140,19 +136,39 @@ class TodayView(tk.Frame):
         self._total_lbl.pack(side=tk.LEFT, padx=(8, 0))
 
         self._comment_lbl = tk.Label(
-            inner, text="",
+            self._punch_inner, text="",
             bg=config.CARD_BG, fg=config.FL_02,
             font=(config.FONT_FAMILY, 9),
             wraplength=700, justify="left"
         )
         self._comment_lbl.pack(anchor="w", pady=(6, 0))
 
+    def _make_time_cell(self, grid, key, lbl_text, col):
+        cell = tk.Frame(
+            grid, bg=config.SUNRISE_WHITE,
+            highlightbackground="#E8E5DF", highlightthickness=1
+        )
+        cell.grid(row=0, column=col, padx=(0, 8), sticky="ew", ipady=10, ipadx=12)
+
+        tk.Label(
+            cell, text=lbl_text,
+            bg=config.SUNRISE_WHITE, fg=config.FL_03,
+            font=(config.FONT_FAMILY, 8)
+        ).pack(anchor="w", padx=12, pady=(10, 2))
+
+        lbl = tk.Label(
+            cell, text="--:--",
+            bg=config.SUNRISE_WHITE, fg=config.FL_01,
+            font=(config.FONT_FAMILY, 20, "bold")
+        )
+        lbl.pack(anchor="w", padx=12, pady=(0, 10))
+        self._tlbls[key] = lbl
+
     def _build_adhoc_card(self, p):
         inner = card_frame(p, pady=(0, 28))
 
         section_title(inner, "Add Ad-hoc Hours").pack(anchor="w", pady=(0, 14))
 
-        # Row 1: hours
         r1 = tk.Frame(inner, bg=config.CARD_BG)
         r1.pack(fill=tk.X, pady=(0, 10))
 
@@ -169,7 +185,6 @@ class TodayView(tk.Frame):
         self._adhoc_spin.set("0.25")
         self._adhoc_spin.pack(side=tk.LEFT)
 
-        # Row 2: note (full-width)
         tk.Label(
             inner, text="Note / reason:",
             bg=config.CARD_BG, fg=config.FL_01,
@@ -181,7 +196,6 @@ class TodayView(tk.Frame):
         )
         self._adhoc_note.pack(fill=tk.X, pady=(0, 12))
 
-        # Row 3: button + status
         r3 = tk.Frame(inner, bg=config.CARD_BG)
         r3.pack(fill=tk.X)
 
@@ -200,7 +214,34 @@ class TodayView(tk.Frame):
         )
         self._adhoc_status.pack(side=tk.LEFT, padx=(14, 0))
 
-    # ── Refresh ────────────────────────────────────────────────────────────
+    # ── State helpers ────────────────────────────────────────────────────────
+
+    def _active_session(self):
+        """Return the last session dict that has no punch_out, or None."""
+        sessions = self._data.get("sessions") or []
+        for s in reversed(sessions):
+            if not s.get("punch_out"):
+                return s
+        return None
+
+    def _all_sessions_complete(self):
+        """True when there is at least one session and all have punch_out."""
+        sessions = self._data.get("sessions") or []
+        if not sessions:
+            return False
+        return all(bool(s.get("punch_out")) for s in sessions)
+
+    def _status(self):
+        active = self._active_session()
+        if active is None and not (self._data.get("sessions") or []):
+            return "IDLE"
+        if active is None:
+            return "CLOCKED OUT"
+        if active.get("lunch_start") and not active.get("lunch_end"):
+            return "ON LUNCH"
+        return "CLOCKED IN"
+
+    # ── Refresh ──────────────────────────────────────────────────────────────
 
     def on_show(self):
         self._refresh()
@@ -216,9 +257,20 @@ class TodayView(tk.Frame):
         chip_bg, chip_fg = CHIPS.get(status, CHIPS["IDLE"])
         self._badge.configure(text=status, bg=chip_bg, fg=chip_fg)
 
+        # Rebuild session history rows
+        self._rebuild_session_history()
+
+        # Update active session time boxes
+        active = self._active_session()
         for key in ("punch_in", "lunch_start", "lunch_end", "punch_out"):
-            val = self._data.get(key) or ""
+            val = active.get(key, "") if active else ""
             self._tlbls[key].configure(text=val if val else "--:--")
+
+        # Show/hide Clock In Again
+        if self._all_sessions_complete():
+            self._clock_in_again_btn.pack(side=tk.LEFT, pady=(14, 0))
+        else:
+            self._clock_in_again_btn.pack_forget()
 
         total = self._data.get("total_hours")
         self._total_lbl.configure(
@@ -239,39 +291,132 @@ class TodayView(tk.Frame):
 
         self._sync_btns()
 
-    def _status(self):
-        d = self._data
-        if d.get("punch_out"):   return "CLOCKED OUT"
-        if d.get("lunch_end"):   return "CLOCKED IN"
-        if d.get("lunch_start"): return "ON LUNCH"
-        if d.get("punch_in"):    return "CLOCKED IN"
-        return "IDLE"
+    def _rebuild_session_history(self):
+        """Rebuild the compact session-history rows for completed sessions."""
+        for w in self._session_history_frame.winfo_children():
+            w.destroy()
+
+        sessions = self._data.get("sessions") or []
+        # Show only sessions that are fully complete (have punch_out)
+        complete = [s for s in sessions if s.get("punch_in") and s.get("punch_out")]
+        if not complete:
+            return
+
+        for idx, s in enumerate(complete):
+            pi = s.get("punch_in", "")
+            po = s.get("punch_out", "")
+            # Compute duration for display
+            ph = utils.compute_session_hours(
+                utils.parse_time(pi),
+                utils.parse_time(s.get("lunch_start")),
+                utils.parse_time(s.get("lunch_end")),
+                utils.parse_time(po),
+            )
+            dur_str = utils.decimal_to_hhmm(ph) if ph is not None else ""
+
+            row = tk.Frame(self._session_history_frame, bg=config.CARD_BG)
+            row.pack(fill=tk.X, pady=(0, 4))
+
+            tk.Label(
+                row,
+                text="● Session {}".format(idx + 1),
+                bg=config.CARD_BG, fg=config.FL_02,
+                font=(config.FONT_FAMILY, 9, "bold")
+            ).pack(side=tk.LEFT, padx=(0, 8))
+
+            tk.Label(
+                row,
+                text="{} → {}".format(pi, po),
+                bg=config.CARD_BG, fg=config.FL_01,
+                font=(config.FONT_FAMILY, 9)
+            ).pack(side=tk.LEFT)
+
+            if dur_str:
+                tk.Label(
+                    row,
+                    text="({})".format(dur_str),
+                    bg=config.CARD_BG, fg=config.FL_03,
+                    font=(config.FONT_FAMILY, 9)
+                ).pack(side=tk.LEFT, padx=(6, 0))
 
     def _sync_btns(self):
-        d = self._data
-        enabled = {
-            "punch_in":    not d.get("punch_in"),
-            "lunch_start": bool(d.get("punch_in"))    and not d.get("lunch_start"),
-            "lunch_end":   bool(d.get("lunch_start")) and not d.get("lunch_end"),
-            "punch_out":   bool(d.get("punch_in"))    and not d.get("punch_out"),
-        }
+        active   = self._active_session()
+        sessions = self._data.get("sessions") or []
+        no_sessions = len(sessions) == 0
+
+        if active is None:
+            # No active session — only punch_in is relevant (if no sessions at all)
+            enabled = {
+                "punch_in":    no_sessions,
+                "lunch_start": False,
+                "lunch_end":   False,
+                "punch_out":   False,
+            }
+        else:
+            has_pi = bool(active.get("punch_in"))
+            has_ls = bool(active.get("lunch_start"))
+            has_le = bool(active.get("lunch_end"))
+            has_po = bool(active.get("punch_out"))
+
+            enabled = {
+                "punch_in":    False,  # already in active session
+                "lunch_start": has_pi and not has_ls and not has_po,
+                "lunch_end":   has_ls and not has_le,
+                "punch_out":   has_pi and not has_po,
+            }
+
         for key, btn in self._btns.items():
             btn.set_enabled(enabled[key])
 
-    # ── Actions ────────────────────────────────────────────────────────────
+    # ── Actions ──────────────────────────────────────────────────────────────
 
     def _punch(self, key):
         now   = datetime.datetime.now().strftime("%H:%M")
         today = datetime.date.today()
 
-        if key == "punch_out":
+        sessions = self._data.get("sessions") or []
+
+        if key == "punch_in":
+            # Only allowed when no sessions exist yet
+            if sessions:
+                return
+            new_session = {"punch_in": now, "lunch_start": "", "lunch_end": "", "punch_out": ""}
+            sessions.append(new_session)
+            self._data["sessions"] = sessions
+
+        elif key == "punch_out":
+            active = self._active_session()
+            if active is None:
+                return
             comment = self._ask_comment()
             if comment is None:
                 return
-            self._data["punch_out"]     = now
+            active["punch_out"] = now
             self._data["punch_comment"] = comment
+            self._data["comment"]       = comment
+
         else:
-            self._data[key] = now
+            # lunch_start or lunch_end — set on active session
+            active = self._active_session()
+            if active is None:
+                return
+            active[key] = now
+
+        try:
+            self.backend.write_day(today, self._data)
+        except PermissionError as e:
+            messagebox.showerror("File Error", str(e))
+            return
+        self._refresh()
+
+    def _punch_new_session(self):
+        """Start a new session (Clock In Again) after all sessions are complete."""
+        now   = datetime.datetime.now().strftime("%H:%M")
+        today = datetime.date.today()
+
+        sessions = self._data.get("sessions") or []
+        sessions.append({"punch_in": now, "lunch_start": "", "lunch_end": "", "punch_out": ""})
+        self._data["sessions"] = sessions
 
         try:
             self.backend.write_day(today, self._data)
@@ -341,8 +486,8 @@ class TodayView(tk.Frame):
         note  = self._adhoc_note.get().strip()
         today = datetime.date.today()
 
-        existing  = self._data.get("adhoc_hours") or 0.0
-        old_note  = self._data.get("adhoc_note")  or ""
+        existing = self._data.get("adhoc_hours") or 0.0
+        old_note = self._data.get("adhoc_note") or ""
 
         self._data["adhoc_hours"] = round(existing + hours, 2)
         self._data["adhoc_note"]  = (

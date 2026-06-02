@@ -206,21 +206,22 @@ class DashboardView(tk.Frame):
 
         has_any = False
         for i, row in enumerate(week_data):
-            pi = utils.hhmm_to_decimal(row.get("punch_in", ""))
-            ls = utils.hhmm_to_decimal(row.get("lunch_start", ""))
-            le = utils.hhmm_to_decimal(row.get("lunch_end", ""))
-            po = utils.hhmm_to_decimal(row.get("punch_out", ""))
-
-            if pi is None or po is None:
-                continue
-            has_any = True
-
-            if ls is not None and le is not None:
-                ax.barh(i, ls - pi, left=pi, color=C_WORK,  height=0.45, alpha=0.9)
-                ax.barh(i, le - ls, left=ls, color=C_GOLD,  height=0.45, alpha=0.85)
-                ax.barh(i, po - le, left=le, color=C_WORK,  height=0.45, alpha=0.9)
-            else:
-                ax.barh(i, po - pi, left=pi, color=C_WORK, height=0.45, alpha=0.9)
+            sessions = row.get("sessions") or []
+            if sessions:
+                has_any = True
+            for s in sessions:
+                pi = utils.hhmm_to_decimal(s.get("punch_in", ""))
+                ls = utils.hhmm_to_decimal(s.get("lunch_start", ""))
+                le = utils.hhmm_to_decimal(s.get("lunch_end", ""))
+                po = utils.hhmm_to_decimal(s.get("punch_out", ""))
+                if pi is None or po is None:
+                    continue
+                if ls is not None and le is not None:
+                    ax.barh(i, ls - pi, left=pi, color=C_WORK, height=0.45, alpha=0.9)
+                    ax.barh(i, le - ls, left=ls, color=C_GOLD, height=0.45, alpha=0.85)
+                    ax.barh(i, po - le, left=le, color=C_WORK, height=0.45, alpha=0.9)
+                else:
+                    ax.barh(i, po - pi, left=pi, color=C_WORK, height=0.45, alpha=0.9)
 
         ax.set_yticks(list(range(7)))
         ax.set_yticklabels([d.strftime("%a") for d in week], fontsize=8)
@@ -356,9 +357,23 @@ class DashboardView(tk.Frame):
         ax.grid(alpha=0.15, color=C_FL03)
         _style_ax(ax, "90-Day Trends")
 
-        # Stats as xlabel
-        start_vals = [utils.hhmm_to_decimal(r["punch_in"])  for r in filtered if r.get("punch_in")]
-        end_vals   = [utils.hhmm_to_decimal(r["punch_out"]) for r in filtered if r.get("punch_out")]
+        # Stats as xlabel — use first session's punch_in and last session's punch_out
+        start_vals = []
+        end_vals   = []
+        for r in filtered:
+            sessions = r.get("sessions") or []
+            if sessions:
+                first_pi = sessions[0].get("punch_in", "")
+                last_po  = sessions[-1].get("punch_out", "")
+            else:
+                first_pi = r.get("punch_in", "")
+                last_po  = r.get("punch_out", "")
+            v = utils.hhmm_to_decimal(first_pi)
+            if v is not None:
+                start_vals.append(v)
+            v = utils.hhmm_to_decimal(last_po)
+            if v is not None:
+                end_vals.append(v)
         ot_days    = sum(1 for h in hours if h > config.WORK_HOURS_DAILY)
         avg_hrs    = sum(hours) / len(hours) if hours else 0
 

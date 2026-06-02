@@ -49,25 +49,55 @@ def sheet_name_for_date(d):
     return d.strftime("%b %Y")
 
 
-def compute_hours(punch_in, lunch_start, lunch_end, punch_out, adhoc):
+def compute_session_hours(punch_in, lunch_start, lunch_end, punch_out):
+    """Compute hours for a single session. Arguments are datetime.time objects or None.
+    Returns float or None if no complete in/out pair."""
     if punch_in is None or punch_out is None:
         return None
     base = datetime.date(2000, 1, 1)
-    dt_in = datetime.datetime.combine(base, punch_in)
+    dt_in  = datetime.datetime.combine(base, punch_in)
     dt_out = datetime.datetime.combine(base, punch_out)
     if dt_out < dt_in:
         dt_out += datetime.timedelta(days=1)
-    total = (dt_out - dt_in).total_seconds() / 3600.0
+    secs = (dt_out - dt_in).total_seconds()
     if lunch_start is not None and lunch_end is not None:
         dt_ls = datetime.datetime.combine(base, lunch_start)
         dt_le = datetime.datetime.combine(base, lunch_end)
         if dt_le < dt_ls:
             dt_le += datetime.timedelta(days=1)
-        lunch_hrs = (dt_le - dt_ls).total_seconds() / 3600.0
-        total -= lunch_hrs
+        secs -= (dt_le - dt_ls).total_seconds()
+    return secs / 3600.0
+
+
+def compute_day_hours(sessions, adhoc):
+    """Sum hours across a list of session dicts (with string times) plus adhoc.
+    Returns float or None if no sessions contributed."""
+    total = 0.0
+    any_session = False
+    for s in (sessions or []):
+        pi = parse_time(s.get("punch_in"))
+        ls = parse_time(s.get("lunch_start"))
+        le = parse_time(s.get("lunch_end"))
+        po = parse_time(s.get("punch_out"))
+        h = compute_session_hours(pi, ls, le, po)
+        if h is not None:
+            any_session = True
+            total += h
+    if not any_session:
+        return None
     if adhoc:
         total += adhoc
     return round(total, 2)
+
+
+def compute_hours(punch_in, lunch_start, lunch_end, punch_out, adhoc):
+    """Backward-compat single-session wrapper. Arguments are datetime.time or None."""
+    h = compute_session_hours(punch_in, lunch_start, lunch_end, punch_out)
+    if h is None:
+        return None
+    if adhoc:
+        h += adhoc
+    return round(h, 2)
 
 
 def week_dates(d):
