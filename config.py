@@ -1,8 +1,22 @@
 import os
+import sys
 import platform
 
+
+def _data_dir():
+    """Return the directory where user data (the Excel file) should live.
+
+    When frozen by PyInstaller, __file__ resolves to a read-only temp dir
+    inside the bundle.  Use sys.executable's directory instead so the file
+    sits next to the app binary / .app bundle.
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 # ── Excel ──────────────────────────────────────────────────────────────────
-EXCEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "TimeCard.xlsx")
+EXCEL_PATH = os.path.join(_data_dir(), "TimeCard.xlsx")
 
 COL_DATE         = 1
 COL_PUNCH_IN     = 2
