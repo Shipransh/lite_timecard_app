@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+TimeCard.xlsx
+.DS_Store
+*.log
