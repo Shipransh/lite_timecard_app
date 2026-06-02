@@ -22,9 +22,18 @@ A local desktop time-card tracker built with Python + tkinter. Stores all data i
 - Python 3.7+
 - `openpyxl` — Excel read/write
 - `matplotlib` — dashboard charts
+- `numpy` — trend chart rolling average
+
+Install all dependencies:
 
 ```bash
-pip install openpyxl matplotlib
+pip install -r requirements.txt
+```
+
+Or individually:
+
+```bash
+pip install openpyxl matplotlib numpy
 ```
 
 ---
@@ -35,12 +44,25 @@ pip install openpyxl matplotlib
 python3 main.py
 ```
 
-The app creates `TimeCard.xlsx` in its own directory on first use.
+`TimeCard.xlsx` is created in the same directory as `main.py` on first use.
 
 **Reset (delete all data and restart):**
 ```bash
 rm TimeCard.xlsx && python3 main.py
 ```
+
+---
+
+## Package as a standalone app
+
+Uses [PyInstaller](https://pyinstaller.org) (included in `requirements.txt`).
+
+```bash
+pip install pyinstaller
+pyinstaller --windowed --onefile --name TimeCard main.py
+```
+
+The packaged binary is written to `dist/`. On first launch, `TimeCard.xlsx` is created in the same directory as the binary.
 
 ---
 
