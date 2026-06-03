@@ -84,6 +84,8 @@ def compute_day_hours(sessions, adhoc):
             any_session = True
             total += h
     if not any_session:
+        if adhoc:
+            return round(adhoc, 2)
         return None
     if adhoc:
         total += adhoc
