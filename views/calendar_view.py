@@ -41,8 +41,8 @@ class CalendarView(tk.Frame):
     def _build(self):
         pane = tk.PanedWindow(
             self, orient=tk.HORIZONTAL,
-            bg=config.CONTENT_BG,
-            sashrelief=tk.FLAT, sashwidth=1,
+            bg=config.FL_03,
+            sashrelief=tk.FLAT, sashwidth=5,
             handlesize=0
         )
         pane.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)

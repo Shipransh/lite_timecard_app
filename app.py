@@ -28,10 +28,16 @@ class App:
     def _build(self):
         self.root.configure(bg=config.SIDEBAR_BG)
 
+        # ── Root split: sidebar | content ─────────────────────────────────
+        _root_pane = tk.PanedWindow(
+            self.root, orient=tk.HORIZONTAL,
+            bg=config.FL_03, sashrelief=tk.FLAT, sashwidth=4, handlesize=0
+        )
+        _root_pane.pack(fill=tk.BOTH, expand=True)
+
         # ── Sidebar ────────────────────────────────────────────────────────
-        sb = tk.Frame(self.root, bg=config.SIDEBAR_BG, width=190)
-        sb.pack(side=tk.LEFT, fill=tk.Y)
-        sb.pack_propagate(False)
+        sb = tk.Frame(_root_pane, bg=config.SIDEBAR_BG)
+        _root_pane.add(sb, minsize=140, width=190)
 
         # Brand block
         brand = tk.Frame(sb, bg=config.SIDEBAR_BG)
@@ -89,8 +95,8 @@ class App:
         lnk.bind("<Button-1>", lambda _: self._change_file())
 
         # ── Content area ───────────────────────────────────────────────────
-        content = tk.Frame(self.root, bg=config.CONTENT_BG)
-        content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        content = tk.Frame(_root_pane, bg=config.CONTENT_BG)
+        _root_pane.add(content, minsize=300)
 
         self._views = {
             "today":     TodayView(content, self.backend, self.root),

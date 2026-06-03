@@ -29,12 +29,18 @@ class RecordsView(tk.Frame):
         self._sort_rev            = True
         self._edit_date           = None
         self._edit_session_widgets = []
+        self._edit_visible        = False
         self._build()
 
     # ── Build ──────────────────────────────────────────────────────────────
 
     def _build(self):
         self._build_bar()
+        self._body_pane = tk.PanedWindow(
+            self, orient=tk.VERTICAL,
+            bg=config.FL_03, sashrelief=tk.FLAT, sashwidth=5, handlesize=0
+        )
+        self._body_pane.pack(fill=tk.BOTH, expand=True)
         self._build_tree()
         self._build_edit_panel()
 
@@ -98,7 +104,10 @@ class RecordsView(tk.Frame):
         self._count_lbl.pack(side=tk.RIGHT)
 
     def _build_tree(self):
-        frm = tk.Frame(self, bg=config.CONTENT_BG)
+        self._tree_pane = tk.Frame(self._body_pane, bg=config.CONTENT_BG)
+        self._body_pane.add(self._tree_pane, minsize=120)
+
+        frm = tk.Frame(self._tree_pane, bg=config.CONTENT_BG)
         frm.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 4))
 
         cols = [c[0] for c in COLUMNS]
@@ -135,16 +144,19 @@ class RecordsView(tk.Frame):
         self._tree.bind("<Double-1>", self._dbl_click)
 
         tk.Label(
-            self, text="Double-click a row to edit",
+            self._tree_pane, text="Double-click a row to edit",
             bg=config.CONTENT_BG, fg=config.FL_03,
             font=(config.FONT_FAMILY, 8)
         ).pack(anchor="e", padx=20, pady=(0, 2))
 
     def _build_edit_panel(self):
+        self._edit_wrap = tk.Frame(self._body_pane, bg=config.CONTENT_BG)
+
         self._edit_frame = tk.Frame(
-            self, bg=config.CARD_BG,
+            self._edit_wrap, bg=config.CARD_BG,
             highlightbackground="#CCCDC9", highlightthickness=1
         )
+        self._edit_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 12))
 
         inner = tk.Frame(self._edit_frame, bg=config.CARD_BG, padx=26, pady=18)
         inner.pack(fill=tk.BOTH, expand=True)
@@ -443,10 +455,14 @@ class RecordsView(tk.Frame):
         self._edit_ah_note.delete(0, tk.END)
         self._edit_ah_note.insert(0, data.get("adhoc_note") or "")
 
-        self._edit_frame.pack(fill=tk.X, padx=20, pady=(0, 12))
+        if not self._edit_visible:
+            self._body_pane.add(self._edit_wrap, minsize=200)
+            self._edit_visible = True
 
     def _hide_edit(self):
-        self._edit_frame.pack_forget()
+        if self._edit_visible:
+            self._body_pane.forget(self._edit_wrap)
+            self._edit_visible = False
         self._edit_date = None
 
     def _save_edit(self):
