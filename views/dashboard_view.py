@@ -28,6 +28,14 @@ C_LUNCH      = "#FFAD28"   # Gold fill for lunch block
 C_WORK       = "#444744"   # FL-01 for work blocks
 
 
+def _effective_total(r):
+    """Return total hours for a day dict, falling back to adhoc-only if total_hours is None."""
+    t = r.get("total_hours")
+    if t is not None:
+        return t
+    return r.get("adhoc_hours")  # None if absent too
+
+
 def _style_ax(ax, title):
     ax.set_title(title, fontsize=10, fontweight="bold", pad=8,
                  color=C_FL01, loc="left")
@@ -169,31 +177,48 @@ class DashboardView(tk.Frame):
         ax.clear()
 
         labels = [d.strftime("%a\n%m/%d") for d in week]
-        hours  = [r.get("total_hours") or 0.0 for r in week_data]
-        colors = [
-            C_BAR_OT if h > config.WORK_HOURS_DAILY else
-            C_BAR_NORMAL if h > 0 else C_BAR_EMPTY
-            for h in hours
+
+        adhoc_h   = [r.get("adhoc_hours") or 0.0 for r in week_data]
+        total_h   = [_effective_total(r) or 0.0   for r in week_data]
+        session_h = [max(0.0, round(t - a, 6)) for t, a in zip(total_h, adhoc_h)]
+
+        session_colors = [
+            C_BAR_OT     if t > config.WORK_HOURS_DAILY else
+            C_BAR_NORMAL if t > 0                       else
+            C_BAR_EMPTY
+            for t in total_h
         ]
 
-        bars = ax.bar(labels, hours, color=colors, width=0.55, zorder=2)
+        bars1 = ax.bar(labels, session_h, color=session_colors, width=0.55, zorder=2)
+        ax.bar(labels, adhoc_h, bottom=session_h, color=C_GOLD, width=0.55, zorder=2)
+
         ax.axhline(
             y=config.WORK_HOURS_DAILY,
             color=C_FL03, linestyle="--", linewidth=1, zorder=1
         )
-        ax.set_ylim(0, max(12, max(hours) + 1.5) if any(h > 0 for h in hours) else 12)
+        ax.set_ylim(0, max(12, max(total_h) + 1.5) if any(h > 0 for h in total_h) else 12)
         ax.set_ylabel("Hours", fontsize=8, color=C_FL02)
         ax.grid(axis="y", alpha=0.25, zorder=0, color=C_FL03)
         _style_ax(ax, "Weekly Hours")
 
-        for bar, h in zip(bars, hours):
-            if h > 0:
+        for bar, t in zip(bars1, total_h):
+            if t > 0:
                 ax.text(
                     bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() + 0.1,
-                    utils.decimal_to_hhmm(h),
+                    t + 0.1,
+                    utils.decimal_to_hhmm(t),
                     ha="center", va="bottom", fontsize=6.5, color=C_FL01
                 )
+
+        if any(h > 0 for h in adhoc_h):
+            from matplotlib.patches import Patch
+            ax.legend(
+                handles=[
+                    Patch(facecolor=C_BAR_NORMAL, label="Clocked"),
+                    Patch(facecolor=C_GOLD,       label="Ad-hoc"),
+                ],
+                fontsize=6.5, loc="upper right", framealpha=0.7, edgecolor=C_FL03
+            )
 
         self._figs["weekly_hours"].tight_layout()
         self._canvases["weekly_hours"].draw()
@@ -250,7 +275,7 @@ class DashboardView(tk.Frame):
         today = datetime.date.today()
         rows  = self.backend.read_month(today.year, today.month)
         data_map = {
-            r["date"].isoformat(): (r.get("total_hours") or 0.0)
+            r["date"].isoformat(): (_effective_total(r) or 0.0)
             for r in rows if r.get("date")
         }
 
@@ -315,7 +340,7 @@ class DashboardView(tk.Frame):
         filtered = sorted(
             [r for r in all_data
              if r.get("date") and r["date"] >= cutoff
-             and r.get("total_hours") is not None],
+             and _effective_total(r) is not None],
             key=lambda r: r["date"]
         )
 
@@ -331,7 +356,7 @@ class DashboardView(tk.Frame):
             return
 
         dates     = [r["date"] for r in filtered]
-        hours     = [r["total_hours"] for r in filtered]
+        hours     = [_effective_total(r) for r in filtered]
         hours_arr = np.array(hours, dtype=float)
 
         # Raw dots
